@@ -7,6 +7,7 @@ import torch
 from torch import nn
 
 
+# Explore this https://pytorch.org/tutorials/beginner/basics/buildmodel_tutorial.html for GPU
 class TorchMLP(nn.Module, ABC):
     """
     A feedforward NN in pytorch using ReLU activiation functions between all layers but the last
@@ -38,6 +39,53 @@ class TorchMLP(nn.Module, ABC):
             x = self.relu(layer(x))
         output = self.out(x)  # Sigmoid applied later in BCEWithLogitLoss, and applied automatically in predict_proba
         return output.double()
+
+
+class MLPRegression:
+    """
+    Wrapper class so our MLP looks like an sklearn model
+    """
+
+    #definitin need hidden layer sizes, alpha, momentum, weight_decay ctiviation  will be sigmoid
+    def __init__(self, h_sizes, lr=0.0001, momentum=0.9, weight_decay =0, task='regression'):
+        self.model = TorchMLP(h_sizes)
+        self.model.double()
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+
+    # 
+    def fit(self, X, y, sampleweights, n_epochs, loss_type='MSE'):
+        """
+        Fits the model using the entire sample data as the batch size
+        """
+        # Reformates from numpy to torch
+        X = torch.from_numpy(X)
+        y = torch.from_numpy(y).double()
+        # Puts model in training mode
+        self.model.train()
+    
+
+        # MSE Loss, Unreduced (x - y)^2, not mean
+        criterion = nn.MSELoss(reduction='none')
+        for epoch in range(n_epochs):   
+            self.optimizer.zero_grad()  # Set gradients to 0 before back propagation for this epoch
+            # Forward pass
+            y_pred = self.model(X)
+            # Compute Loss
+            loss = criterion(y_pred.squeeze(), y)
+            # print(f'Epoch {epoch}: train loss: {loss.item()}')
+            # Backward pass
+            loss.backward()
+            self.optimizer.step()
+
+        return self
+    def predict_y(self, X):
+        """
+        :param X: Feature matrix we want to make predictions on
+        :return: Column vector of predicted values, one for each row (instance) in X
+        """
+        self.model.eval()  # Puts the model in evaluation mode so calls to forward do not update it
+        with torch.no_grad():  # Disables automatic gradient updates from pytorch since we are just evaluating
+            return self.model(torch.from_numpy(X)).numpy().squeeze()  # Apply sigmoid manually
 
 
 class MLPClassifier:

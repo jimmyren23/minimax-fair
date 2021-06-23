@@ -23,7 +23,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
                 group_names=(), group_types=(), data_name='',
                 display_plots=True, verbose=False, use_input_commands=True,
                 show_legend=True,
-                save_models=False, save_plots=False, dirname=''):
+                save_models=False, save_plots=False, dirname='', normalize_labels = False):
     """
     :param X:  numpy matrix of features with dimensions numsamples x numdims
     :param y:  numpy array of labels with length numsamples. Should be numeric (0/1 labels binary classification)
@@ -58,7 +58,8 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
     :param n_epochs: number of epochs per individual MLP model
     :param hidden_sizes: list of sizes for hidden layers of MLP - fractions (and 1) treated as proportions of numdims
     """
-
+    if normalize_labels:
+        y = y / max(y)
     if not use_input_commands and display_plots:
         warnings.warn('WARNING: use_input_commands is set to False. '
                       'This may cause plots to appear and immediately dissappear when running code from the command '

@@ -16,29 +16,30 @@ import warnings
 # MODEL/SIMULATION Settings
 models = {1: 'LinearRegression', 2: 'LogisticRegression', 3: 'Perceptron', 4: 'PairedRegressionClassifier',
           5: 'MLPClassifier'}  # WARNING: MLPClassifier is not GPU optimized and may run slowly
-model_index = 2  # Set this to select a model type according to the mapping above
+model_index = 2 # Set this to select a model type according to the mapping above
 
-numsteps = 2000  # number of steps for learning/game
+numsteps = 5000  # number of steps for learning/game
 # NOTE: eta = a * t^(-b) on the t-th round of the game
-a = 1  # Multiplicative coefficient on parametrized learning rate
+a = 5 # Multiplicative coefficient on parametrized learning rate
 b = 1 / 2  # Negative exponent on parameterized learning rate
-scale_eta_by_label_range = True  # Multiplies `a` by square of max abs. label value, to 'normalize' regression labels
-equal_error = False  # Defaults to False for minimax. Set to True to find equal error solution
+scale_eta_by_label_range = True # Multiplies `a` by square of max abs. label value, to 'normalize' regression labels
+equal_error = False # Defaults to False for minimax. Set to True to find equal error solution
 error_type = 'Log-Loss'  # 'MSE', '0/1 Loss', 'FP', 'FN', 'Log-Loss', 'FP-Log-Loss', 'FN-Log-Loss'
-extra_error_types = {}  # Set of additional error types to plot from (only relevant for classification)
+extra_error_types = {'0/1 Loss'}  # Set of additional error types to plot from (only relevant for classification)
 pop_error_type = ''  # Error type for the population on the trajectory (set automatically in general)
-test_size = 0.0  # The proportion of the training data to be withheld as validation data (set to 0.0 for no validation)
+test_size = 0 # The proportion of the training data to be withheld as validation data (set to 0.0 for no validation)
 random_split_seed = 4235255  # If test_string1 size > 0.0, the seed to be passed to numpy for train/test split
 
 fit_intercept = True  # If the linear model should fit an intercept (applies only to LinReg and Logreg)
 convergence_threshold = 1e-12  # Converge early if max change in sampleweights between rounds is less than threshold
+normalize_labels = True # Choose whether you want to normalize the values so that y lies between [0, 1] or not
 
 # Relaxed Model Settings
-use_multiple_gammas = False  # Set to True to run relaxed algo over many values of gamma
-num_gammas = 5  # If use_multiple_games, number of intermediate gammas to use between min and max feasible gamma
+use_multiple_gammas = False # Set to True to run relaxed algo over many values of gamma
+num_gammas = 10  # If use_multiple_games, number of intermediate gammas to use between min and max feasible gamma
 # Use these arguments to run a single relaxed simulation with on gamma settting
-relaxed = False  # Determines if single run
-gamma = 0.0  # Max groups error if using relaxed variant
+relaxed = True # Determines if single run
+gamma = 0.62 # Max groups error if using relaxed variant
 
 
 # Solver Specific Settings
@@ -78,7 +79,7 @@ datasets = {1: 'COMPAS', 2: 'COMPAS_full', 3: 'Default', 4: 'Communities', 5: 'A
             7: 'Bike', 8: 'Credit', 9: 'Fires', 10: 'Wine', 11: 'Heart', 12: 'Marketing(Small)', 13: 'Marketing(Full)',
             14: 'COMPAS_race_and_gender',
             0: 'Synthetic'}
-data_index = 0  # Set this to select a dataset by index according to the mapping above (0 for synthetic)
+data_index = 1 # Set this to select a dataset by index according to the mapping above (0 for synthetic)
 drop_group_as_feature = True  # Set to False (default) if groups should also be a one hot encoded categorical feature
 
 # Data read/write settings
@@ -251,7 +252,7 @@ if __name__ == '__main__':
                     fit_intercept=fit_intercept, logistic_solver=logistic_solver,
                     max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                     n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay, hidden_sizes=hidden_sizes,
-                    save_plots=save_plots, dirname=dirname)
+                    save_plots=save_plots, dirname=dirname, normalize_labels=normalize_labels)
 
     # If we do the relaxed version of the code, use an unrelaxed simulation to find the bounds on gamma
     else:
@@ -300,7 +301,7 @@ if __name__ == '__main__':
                             max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                             n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay,
                             hidden_sizes=hidden_sizes,
-                            save_plots=save_intermediate_plots, dirname=dirname)
+                            save_plots=save_intermediate_plots, dirname=dirname, normalize_labels=normalize_labels)
 
             print(f'With our non-relaxed simulation, we found the range of feasible gammas to be ' +
                   f'[{minimax_err}, {max_err}]')
@@ -325,7 +326,7 @@ if __name__ == '__main__':
                             gamma=0.0, relaxed=False, random_split_seed=random_split_seed,
                             group_names=group_names, group_types=group_types, data_name=data_name,
                             verbose=verb, use_input_commands=False,
-                            error_type=error_type, display_plots=disp_plots, test_size=test_size)
+                            error_type=error_type, display_plots=disp_plots, test_size=test_size, normalize_labels=normalize_labels)
             if not equal_error:
                 # We can always drive FP/FN rates to 0 by always predicting negative/positive
                 minimax_err = 0
@@ -385,7 +386,7 @@ if __name__ == '__main__':
                             max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                             n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay,
                             hidden_sizes=hidden_sizes,
-                            save_plots=save_intermediate_plots, dirname=dirname + f'/Gamma={gamma}/')
+                            save_plots=save_intermediate_plots, dirname=dirname + f'/Gamma={gamma}/', normalize_labels=normalize_labels)
 
             # Max groups errors and pop errors of the final mixture for a pareto curve
             gammas.append(gamma)

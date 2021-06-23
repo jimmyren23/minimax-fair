@@ -19,7 +19,7 @@ def do_plotting(display_plots, save_plots, use_input_commands, numsteps, group_n
     figures = []
     figure_names = ['PopError_vs_Rounds', 'GroupError_vs_Rounds', 'GroupWeights_vs_Rounds', 'Trajectory_Plot']
 
-    # Combine all the existing arrays as necessary by separating all subgroups as unqiue groups
+    # Combine all the existing arrays as necessary by separating all subgroups as unique groups
     if multi_group:
         num_group_types = len(agg_grouperrs)  # list of numpy arrays
         agg_grouperrs = np.column_stack(agg_grouperrs)  # vertically stck the groups errs
@@ -77,7 +77,7 @@ def do_plotting(display_plots, save_plots, use_input_commands, numsteps, group_n
     if not validation and groupweights is not None:  # Groupweights aren't a part of validation
         figures.append(plt.figure())  # Create figure and append to list
         for g in range(0, len(group_names)):
-            plt.plot(groupweights[:, g], label=group_names[g])
+            plt.plot(groupweights[:, g][:len(agg_grouperrs[:, g]) + 1], label=group_names[g])
         if show_legend:
             plt.legend(loc='upper right')
         plt.title(f'Group Weights' + dataset_string + model_string)

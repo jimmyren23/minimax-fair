@@ -22,3 +22,4 @@ df['Creditability'] = df['Creditability'].apply(lambda x: encoding_credit(x))
 # Write to a new file
 df.to_csv('../datasets/german_cleaned.csv', index=False)
 
+
