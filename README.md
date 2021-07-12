@@ -138,6 +138,10 @@ Downloading instructions: In the Data Folder, download `winequality-red.data`, a
   `combine_wine_data.py` which will create a new csv named `winequality-full.csv` in the `datasets` folder which is
    ready for use.
 
+**Airplanes** -- Using flight information do determine if the flight is delayed. https://www.openml.org/d/1169
+
+Downloading instructions: In the top right of the page, download the .csv filed and name it `airplanes.csv` while placing it into the `datasets` folder. 
+
 ### Running the code with pre-configured datasets
 
 To use a pre-configured dataset simply change the value of
