@@ -8,6 +8,7 @@ from src.read_file import read_dataset_from_file
 from dataset_mapping import get_dataset_features
 from src.plot_relaxed_pareto import do_pareto_plot
 from src.write_params_to_file import write_params_to_os
+from src.grid_search import GridSearch
 import numpy as np
 import random
 import os
@@ -15,19 +16,19 @@ import warnings
 
 # MODEL/SIMULATION Settings
 models = {1: 'LinearRegression', 2: 'LogisticRegression', 3: 'Perceptron', 4: 'PairedRegressionClassifier',
-          5: 'MLPClassifier'}  # WARNING: MLPClassifier is not GPU optimized and may run slowly
-model_index = 5 # Set this to select a model type according to the mapping above
+          5: 'MLPClassifier', 6: 'MLPRegressor'}  # WARNING: MLPClassifier is not GPU optimized and may run slowly
+model_index = 1 # Set this to select a model type according to the mapping above
 
-numsteps = 2000  # number of steps for learning/game
+numsteps = 100  # number of steps for learning/game
 # NOTE: eta = a * t^(-b) on the t-th round of the game
-a = 100 # Multiplicative coefficient on parametrized learning rate
+a = 1 # Multiplicative coefficient on parametrized learning rate
 b = 1 / 2  # Negative exponent on parameterized learning rate
 scale_eta_by_label_range = True # Multiplies `a` by square of max abs. label value, to 'normalize' regression labels
 equal_error = False # Defaults to False for minimax. Set to True to find equal error solution
-error_type = 'Log-Loss'  # 'MSE', '0/1 Loss', 'FP', 'FN', 'Log-Loss', 'FP-Log-Loss', 'FN-Log-Loss'
-extra_error_types = {'0/1 Loss'}  # Set of additional error types to plot from (only relevant for classification)
+error_type = 'MSE'  # 'MSE', '0/1 Loss', 'FP', 'FN', 'Log-Loss', 'FP-Log-Loss', 'FN-Log-Loss'
+extra_error_types = {}  # Set of additional error types to plot from (only relevant for classification)
 pop_error_type = ''  # Error type for the population on the trajectory (set automatically in general)
-test_size = 0 # The proportion of the training data to be withheld as validation data (set to 0.0 for no validation)
+test_size = 0.0 # The proportion of the training data to be withheld as validation data (set to 0.0 for no validation)
 random_split_seed = 4235255  # If test_string1 size > 0.0, the seed to be passed to numpy for train/test split
 
 fit_intercept = True  # If the linear model should fit an intercept (applies only to LinReg and Logreg)
@@ -38,9 +39,8 @@ normalize_labels = True # Choose whether you want to normalize the values so tha
 use_multiple_gammas = False # Set to True to run relaxed algo over many values of gamma
 num_gammas = 10  # If use_multiple_games, number of intermediate gammas to use between min and max feasible gamma
 # Use these arguments to run a single relaxed simulation with on gamma settting
-relaxed = True # Determines if single run
+relaxed = False # Determines if single run
 gamma = 0.62 # Max groups error if using relaxed variant
-
 
 # Solver Specific Settings
 
@@ -53,14 +53,22 @@ C = 1e15  # Inverse of regularization strength, ignored when penalty = 'none'. S
 
 # Settings for Multi-Layer Perceptron (if used)
 # NOTE: Current implementation uses ReLU for all hidden layers and sigmoid for output layer
-n_epochs = 2000
-lr = 0.1
-momentum = 0.9
-weight_decay = 0
+n_epochs = 1000
+lr = 0.01
+momentum = 0.95
+weight_decay = 0.01
+minibatch = False # Determines whether batch (full dataset) or minibatch
+batchsize = 2 # number in batch, typically either 32, 64, 128, or 256 - this only applies when minibatch is True
 # Hidden sizes is a list denoting the size of each hidden layer in the MLP. Fractional values in the list represent
 # proportions of the input layer, and whole numbers represent absolute layer sizes.
 hidden_sizes = [0.5]
 
+# Grid Search Settings -- IGNORED if 'grid_search' is False
+# Should be able to add more parameters in the future, work for more models?
+grid_search = False
+param_grid = [{'lr' : [0.001, 0.01, 0.1], 'numsteps' : [100, 500, 1000], 'n_epochs' : [100, 500, 1000], 
+    'momentum' : [0.9, 0.95], 'weight_decay': [0, 0.001, 0.01], 'hidden_sizes' : [[0.5], [0.6]]}]
+cv = 5 # Determines the cross-validation splitting strategy
 
 # Dataset Settings
 
@@ -77,9 +85,9 @@ is_categorical = True  # Denotes whether labels are categeorical (classification
 use_preconfigured_dataset = True  # Set to True and select a data_index to use an existing dataset (or synthetic data)
 datasets = {1: 'COMPAS', 2: 'COMPAS_full', 3: 'Default', 4: 'Communities', 5: 'Adult', 6: 'Student',
             7: 'Bike', 8: 'Credit', 9: 'Fires', 10: 'Wine', 11: 'Heart', 12: 'Marketing(Small)', 13: 'Marketing(Full)',
-            14: 'COMPAS_race_and_gender',
+            14: 'COMPAS_race_and_gender', 15: 'Airlines',
             0: 'Synthetic'}
-data_index = 4 # Set this to select a dataset by index according to the mapping above (0 for synthetic)
+data_index = 15 # Set this to select a dataset by index according to the mapping above (0 for synthetic)
 drop_group_as_feature = True  # Set to False (default) if groups should also be a one hot encoded categorical feature
 
 # Data read/write settings
@@ -107,7 +115,7 @@ num_uniform_features = 0  # How many of the "numdims" features should be uniform
 intercept_scale = 2  # Coefficient on randomly generated` intercept for each groups  (0.0 means no intercept)
 
 # Plot/output settings
-verbose = True  # enables verbose output for doLearning
+verbose = False # enables verbose output for doLearning
 display_plots = True
 display_intermediate_plots = False  # Whether or not to display intermediate plots in during relaxation
 use_basic_plots = False  # Whether or not we want to save/display the simple gamma vs error plots
@@ -211,6 +219,27 @@ if __name__ == '__main__':
         dirname = f'{outer_directory}/{model_tag}{solver_tag}_a={a}_b={b}_T={numsteps}_' + dataname_extension \
                   + f'{error_tag}{equal_error_tag}'
 
+    # if grid search:
+    # Create the GridSearch Object
+    # Have it fit, should it have do_learning internally
+    if grid_search and model_type == 'MLPRegressor':
+        print('Starting the grid search now...')
+        grid = GridSearch(param_grid=param_grid, cv=cv)
+        grid.fit(X=X, y=y, numsteps=numsteps, grouplabels=grouplabels, a=a, b=b, scale_eta_by_label_range=scale_eta_by_label_range,
+                model_type=model_type, error_type=error_type,
+                extra_error_types=extra_error_types, pop_error_type=pop_error_type,
+                max_logi_iters=max_logi_iters, tol=tol, fit_intercept=fit_intercept, logistic_solver=logistic_solver,
+                lr=lr, momentum=momentum, weight_decay=weight_decay, n_epochs=n_epochs, hidden_sizes=hidden_sizes, 
+                batchsize=batchsize, minibatch=minibatch,
+                group_names=group_names, group_types=group_types, 
+                display_plots=display_plots, verbose=verbose, use_input_commands=use_input_commands,
+                normalize_labels=normalize_labels)
+        grid.get_best_model()
+        print("Finished the model. Press Enter to End")
+        input()
+        quit()
+        
+
     if not use_multiple_gammas:
         print(f'Executing main with the following parameters: \n \n\
         model: {model_type} \n \
@@ -251,8 +280,11 @@ if __name__ == '__main__':
                     test_size=test_size,
                     fit_intercept=fit_intercept, logistic_solver=logistic_solver,
                     max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
-                    n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay, hidden_sizes=hidden_sizes,
-                    save_plots=save_plots, dirname=dirname, normalize_labels=normalize_labels)
+                    n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay, hidden_sizes=hidden_sizes, 
+                    batchsize=batchsize, minibatch=minibatch,
+                    save_plots=save_plots, dirname=dirname, normalize_labels=normalize_labels,
+                    X_test=None, y_test=None)
+
 
     # If we do the relaxed version of the code, use an unrelaxed simulation to find the bounds on gamma
     else:
@@ -300,8 +332,9 @@ if __name__ == '__main__':
                             test_size=test_size, fit_intercept=fit_intercept, logistic_solver=logistic_solver,
                             max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                             n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay,
-                            hidden_sizes=hidden_sizes,
-                            save_plots=save_intermediate_plots, dirname=dirname, normalize_labels=normalize_labels)
+                            hidden_sizes=hidden_sizes, batchsize=batchsize, minibatch=minibatch,
+                            save_plots=save_intermediate_plots, dirname=dirname, normalize_labels=normalize_labels,
+                            X_test=None, Y_test=None)
 
             print(f'With our non-relaxed simulation, we found the range of feasible gammas to be ' +
                   f'[{minimax_err}, {max_err}]')
@@ -322,11 +355,12 @@ if __name__ == '__main__':
                             convergence_threshold=convergence_threshold,
                             max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                             n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay,
-                            hidden_sizes=hidden_sizes,
+                            hidden_sizes=hidden_sizes, batchsize=batchsize, minibatch=minibatch,
                             gamma=0.0, relaxed=False, random_split_seed=random_split_seed,
                             group_names=group_names, group_types=group_types, data_name=data_name,
                             verbose=verb, use_input_commands=False,
-                            error_type=error_type, display_plots=disp_plots, test_size=test_size, normalize_labels=normalize_labels)
+                            error_type=error_type, display_plots=disp_plots, test_size=test_size, normalize_labels=normalize_labels,
+                            X_test=None, Y_test=None)
             if not equal_error:
                 # We can always drive FP/FN rates to 0 by always predicting negative/positive
                 minimax_err = 0
@@ -385,8 +419,9 @@ if __name__ == '__main__':
                             test_size=test_size, fit_intercept=fit_intercept, logistic_solver=logistic_solver,
                             max_logi_iters=max_logi_iters, tol=tol, penalty=penalty, C=C,
                             n_epochs=n_epochs, lr=lr, momentum=momentum, weight_decay=weight_decay,
-                            hidden_sizes=hidden_sizes,
-                            save_plots=save_intermediate_plots, dirname=dirname + f'/Gamma={gamma}/', normalize_labels=normalize_labels)
+                            hidden_sizes=hidden_sizes, batchsize=batchsize, minibatch=minibatch,
+                            save_plots=save_intermediate_plots, dirname=dirname + f'/Gamma={gamma}/', normalize_labels=normalize_labels,
+                            X_test=None, Y_test=None)
 
             # Max groups errors and pop errors of the final mixture for a pareto curve
             gammas.append(gamma)

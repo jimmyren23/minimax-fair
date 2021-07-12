@@ -110,6 +110,13 @@ def get_dataset_features(dataset):
         usable_features = None
         categorical_columns = ['color']
         is_categorical = False
+    elif dataset == 'Airlines':
+        path = 'datasets/airlines.csv'
+        label = 'Delay'
+        group = 'Airline'
+        usable_features = ['Delay', 'Airline', 'AirportFrom', 'AirportTo', 'DayOfWeek', 'Time', 'Length']
+        categorical_columns = ['Airline', 'AirportFrom', 'AirportTo', 'DayOfWeek']
+        is_categorical = True
     # Use synthetic data if any other string is passed in
     else:
         path = ''

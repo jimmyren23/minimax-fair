@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 
 
 def create_validation_split(X, y, grouplabels, test_size, random_seed=45):
@@ -91,3 +91,46 @@ def create_validation_split(X, y, grouplabels, test_size, random_seed=45):
         assert grouplabels_train_T.T.shape[1] + grouplabels_test_T.T.shape[1] == grouplabels.shape[1]
 
         return X_train, X_test, y_train, y_test, grouplabels_train_T.T, grouplabels_test_T.T
+
+def create_fold_split(X, y, grouplabels, cv):
+    """
+    :param X: Features matrix, should be training data
+    :param y: label matrix (column vector)
+    :param grouplabels: numpy array denoting a groups index for each sample point
+    :param cv: number of folds using for the k-fold validation
+    :param random_seed: random state for sklearns train/test split
+    :yields: X_train, X_test, y_train, y_test, grouplabels_train, grouplabels_test
+    """
+
+    num_group_types = grouplabels.shape[0]
+
+    # Default, single groups type case
+    if num_group_types == 1:
+        grouplabels = grouplabels[0]
+        numgroups = np.size(np.unique(grouplabels))
+        grouplabels_train = []
+        grouplabels_test = []
+
+        skf = KFold(n_splits=cv)
+        # NEW IDEA: For each group, we do a fold. Add them to each respect fold. Continue.
+        # Creates Stratified Fold
+        for train_index, test_index in skf.split(X, y):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+
+
+            # Sets the training and testing labels to the labels at the training and testing indices
+            grouplabels_train = grouplabels[train_index]  # python short-hand to add many `g`s to the list
+            grouplabels_test = grouplabels[test_index]  # python short-hand to add many `g`s to the list
+
+            grouplabels_train = np.expand_dims(np.array(grouplabels_train), axis=0)
+            grouplabels_test = np.expand_dims(np.array(grouplabels_test), axis=0)
+
+            # Assert that we still have the same number of features
+            assert X_train.shape[1] == X.shape[1]
+            assert X_test.shape[1] == X.shape[1]
+            
+            yield X_train, X_test, y_train, y_test, grouplabels_train, grouplabels_test
+    else:
+        # Need to do the multi-groups case
+        return ValueError

@@ -6,7 +6,7 @@ from src.paired_regression_classifier import PairedRegressionClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression, Perceptron
 from sklearn.exceptions import ConvergenceWarning
 from src.train_test_split import create_validation_split
-from src.torch_wrapper import MLPClassifier
+from src.torch_wrapper import MLPClassifier, MLPRegressor
 from src.plotting import do_plotting
 from src.save_models import save_models_to_os
 import warnings
@@ -18,12 +18,14 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
                 extra_error_types=set(), pop_error_type='Total',
                 convergence_threshold=1e-15,
                 max_logi_iters=100, tol=1e-8, fit_intercept=True, logistic_solver='lbfgs', penalty='none', C=1e15,
-                lr=0.01, momentum=0.9, weight_decay=0, n_epochs=10000, hidden_sizes=(2 / 3,),
+                lr=0.01, momentum=0.9, weight_decay=0, n_epochs=10000, hidden_sizes=(2 / 3,), 
+                batchsize=32, minibatch=False,
                 test_size=0.0, random_split_seed=0,
                 group_names=(), group_types=(), data_name='',
                 display_plots=True, verbose=False, use_input_commands=True,
                 show_legend=True,
-                save_models=False, save_plots=False, dirname='', normalize_labels = False):
+                save_models=False, save_plots=False, dirname='', normalize_labels = False, 
+                X_test = None, y_test = None):
     """
     :param X:  numpy matrix of features with dimensions numsamples x numdims
     :param y:  numpy array of labels with length numsamples. Should be numeric (0/1 labels binary classification)
@@ -57,9 +59,13 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
     :param lr: learning rate of gradient descent for MLP
     :param n_epochs: number of epochs per individual MLP model
     :param hidden_sizes: list of sizes for hidden layers of MLP - fractions (and 1) treated as proportions of numdims
+    :param batchsize: if the model uses minibatch, then this will be the size of the minibatches
+    :param minibatch: denotes if the model uses minibatch gradient descent or batch gradient descent
+    :param normalize_labels: denotes if the y labels should be normalized 
     """
     if normalize_labels:
         y = y / max(y)
+
     if not use_input_commands and display_plots:
         warnings.warn('WARNING: use_input_commands is set to False. '
                       'This may cause plots to appear and immediately dissappear when running code from the command '
@@ -120,9 +126,9 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
     # Modularizes the existing code to easily swap models with the argument "model_type"
     model_classes = {'LinearRegression': LinearRegression, 'LogisticRegression': LogisticRegression,
                      'PairedRegressionClassifier': PairedRegressionClassifier, 'Perceptron': Perceptron,
-                     'MLPClassifier': MLPClassifier}
+                     'MLPClassifier': MLPClassifier, 'MLPRegressor': MLPRegressor}
 
-    regression_models = ['LinearRegression', 'MLPRegresor']
+    regression_models = ['LinearRegression', 'MLPRegressor']
     classification_models = ['LogisticRegression', 'Perceptron', 'PairedRegressionClassifier',
                              'MLPClassifier']
     try:
@@ -140,15 +146,19 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
         raise Exception(f'Invalid model_type: {model_type}.')
 
     do_validation = (test_size != 0.0)  # Stores a boolean flag on whether or not we are doing validation
-    if do_validation:
+    
+    if do_validation and X_test is None and y_test is None:
         # Use our custom function to create a balanced train/test split across groups membership
         # NOTE: If num_group_types > 1, this function will do a purely random split
         X_train, X_test, y_train, y_test, grouplabels_train, grouplabels_test = \
             create_validation_split(X, y, grouplabels, test_size, random_seed=random_split_seed)
     else:
         # If we aren't doing a split, all data is used as "training" data
-        X_train, y_train, grouplabels_train, = X, y, grouplabels
-        X_test, y_test, grouplabels_test = None, None, None
+        X_train, y_train, grouplabels_train, = X, y, grouplabels # JIMMY: temp putting in X_train into X anyways
+        if X_test is None and y_test is None: # If testing data passed in, just set grouplabels_test otherwise dont
+            X_test, y_test, grouplabels_test = None, None, None
+        else:
+            grouplabels_test = grouplabels
 
     # Compute features about the data
     numsamples, numdims = X_train.shape
@@ -339,9 +349,15 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
         elif model_type == 'PairedRegressionClassifier':
             # NOTE: This is not an sklearn model_class, but a custom class
             modelhat = model_class(regressor_class=LinearRegression).fit(X_train, y_train, avg_sampleweights)
+        elif model_type == 'MLPRegressor':
+            hidden_sizes = [numdims] + \
+                            list(map(lambda x: x if np.floor(x) == x else int(np.floor(x * numdims)), hidden_sizes))
+            modelhat = MLPRegressor(hidden_sizes, lr=lr, momentum=momentum, weight_decay=weight_decay). \
+                fit(X_train, y_train, avg_sampleweights, batchsize, minibatch, n_epochs=n_epochs)
         elif model_type == 'MLPClassifier':  # Pytorch's MLP wrapped with our custom class to work with the interface
             hidden_sizes = [numdims] + \
                            list(map(lambda x: x if np.floor(x) == x else int(np.floor(x * numdims)), hidden_sizes))
+            
             modelhat = MLPClassifier(hidden_sizes, lr=lr, momentum=momentum, weight_decay=weight_decay). \
                 fit(X_train, y_train, avg_sampleweights, n_epochs=n_epochs)
         else:  # Linear Regression or Perceptron
@@ -359,7 +375,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
         if model_type in regression_models:
             # Updates errors array with the round-specific errors for each person for round t
             compute_model_errors(modelhat, X_train, y_train, t, errors, 'MSE')
-            if do_validation:
+            if do_validation or X_test is not None and y_test is not None: # if validation or kfold
                 compute_model_errors(modelhat, X_test, y_test, t, val_errors, 'MSE')
             # NOTE: Currently, there are no "extra_error_types" feasible for regression
 
@@ -382,7 +398,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
         for i in range(num_group_types):
             update_group_errors(numgroups[i], t, errors, grouperrs[i], agg_grouperrs[i], index[i],
                                 groupsize_err_type[i])
-            if do_validation:
+            if do_validation or X_test is not None and y_test is not None:
                 update_group_errors(numgroups[i], t, val_errors, val_grouperrs[i], val_agg_grouperrs[i],
                                     val_index[i], val_groupsize_err_type[i])
 
@@ -432,12 +448,12 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
     # Truncate the groups error arrays to have length equal to the number of rounds actually performed
     # Remove 0th position in the arrays which stored the value 0 for easy DP
     agg_grouperrs = [arr[1:total_steps, :] for arr in agg_grouperrs]
-    if do_validation:
+    if do_validation or X_test is not None and y_test is not None:
         val_agg_grouperrs = [arr[1:total_steps, :] for arr in val_agg_grouperrs]
 
     # Computes the expected error of the mixture with respect to the population with DP style updates at each round
     agg_poperrs = compute_mixture_pop_errors(specific_errors[pop_error_type], total_steps)
-    if do_validation:
+    if do_validation or X_test is not None and y_test is not None:
         val_agg_poperrs = compute_mixture_pop_errors(val_specific_errors[pop_error_type], total_steps)
 
     # Plot and save results as necessary
@@ -469,7 +485,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
                     multi_group=True)
 
         # Repeat for validation as necessary
-        if do_validation:
+        if do_validation or X_test is not None and y_test is not None:
             val_group_names_and_sizes_list = get_group_names_and_sizes_list(group_names, val_groupsize,
                                                                             num_group_types)
             val_stacked_bonus_plots = create_stacked_bonus_plots(num_group_types, extra_error_types, numgroups,
@@ -483,7 +499,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
                         dirname, validation=True, multi_group=True)
     else:  # Ensures that return doesn't fail when we aren't plotting
         stacked_bonus_plots = None
-        if do_validation:
+        if do_validation or X_test is not None and y_test is not None:
             val_stacked_bonus_plots = None
 
     # Save models as pythonic objects to either filesystem/S3 bucket
@@ -496,7 +512,7 @@ def do_learning(X, y, numsteps, grouplabels, a=1, b=0.5,  equal_error=False, sca
         final_max_group_error[i] = np.max(agg_grouperrs[i][-1])  # This is the minimum gamma we think is feasible
         highest_gamma[i] = compute_highest_gamma(agg_poperrs, agg_grouperrs[i], relaxed)
 
-    if do_validation:
+    if do_validation or X_test is not None and y_test is not None:
         val_max_grp_err = np.max(val_agg_grouperrs[:][-1])  # This is the minimum gamma we think is feasible
         val_pop_err = val_agg_poperrs[-1]  # max groups error when optimizing for pop error
 
@@ -773,7 +789,10 @@ def rescale_feature_matrix(X):
     X = X.astype(float)
     # X is a numsamples by numfeatures matrix, X[:, k] represents the kth columnn
     for col in range(X.shape[1]):
-        magnitude = np.floor(np.log10(max(abs(X[:, col]))))  # Finds the order of magnitude of max val
-        X[:, col] /= np.power(10, magnitude)  # Put all feature values in the range [-1, 1]
+        if max(abs(X[:, col])) != 0:
+            magnitude = np.floor(np.log10(max(abs(X[:, col]))))  # Finds the order of magnitude of max val
+            X[:, col] /= np.power(10, magnitude)  # Put all feature values in the range [-1, 1]
 
     return X  # X is modified in place, but we return it so function returns reference to its input for chaining
+
+
